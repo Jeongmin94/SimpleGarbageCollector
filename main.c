@@ -229,12 +229,12 @@ void GC_init(void)
     void *stack_addr = pthread_get_stackaddr_np(self);
     size_t stack_size = pthread_get_stacksize_np(self);
 
-    // stack_bottom은 스택의 가장 낮은 주소
-    // 스택은 높은 주소에서 낮은 주소로 자라므로 시작 주소에서 크기를 빼면 바닥 주소가 됨
-    stack_bottom = (uintptr_t)stack_addr - stack_size;
+    // stack_bottom을 스택의 가장 높은 주소(시작점)로 정의
+    stack_bottom = (uintptr_t)stack_addr;
 
-    printf("Stack information - addr: %p, size: %zu, bottom: %p\n",
+    printf("Stack information - addr: %p, allocated size: %zu, bottom(highest): %p\n",
            stack_addr, stack_size, (void *)stack_bottom);
+    printf("Theoretical lowest address: %p\n", (void *)(stack_bottom - stack_size));
 
     usedp = NULL;
     base.next = freep = &base;
@@ -273,6 +273,12 @@ void GC_collect(void)
     }
     printf("BSS segments and size: %p, %zu\n", bss_start, bss_size);
 
+    /* Scan the stack. */
+    // 올바른 스택 탑 주소 획득
+    stack_top = (uintptr_t)__builtin_frame_address(0);
+    printf("Stack top address (current frame): %p\n", (void *)stack_top);
+    printf("Currently used stack size: %zu bytes\n", (size_t)(stack_bottom - stack_top));
+
     if (usedp == NULL)
         return;
 
@@ -287,9 +293,10 @@ void GC_collect(void)
     }
 
     /* Scan the stack. */
-    // 올바른 스택 탑 주소 획득
-    stack_top = (uintptr_t)__builtin_frame_address(0);
-    // Apple Silicon에서 스택은 높은 주소에서 낮은 주소로 자라기 때문에 인자 순서 조정
+    // Apple Silicon에서 스택은 높은 주소에서 낮은 주소로 자라기 때문에
+    // stack_bottom이 높은 주소이고 stack_top이 낮은 주소
+    printf("Scanning stack region from %p to %p (%zu bytes)\n",
+           (void *)stack_top, (void *)stack_bottom, (size_t)(stack_bottom - stack_top));
     scan_region((uintptr_t *)stack_top, (uintptr_t *)stack_bottom);
 
     /* Mark from the head. */
