@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <assert.h>
+#include <mach-o/getsect.h>
+#include <mach-o/dyld.h>
+#include <stdint.h>
+#include <pthread.h>
 
 // 16 bytes word aligned
 typedef struct header
@@ -78,7 +82,7 @@ morecore(size_t num_units)
 }
 
 /*
- * 프리 리스트에서 청크를 찾고, 이것을 사용 리스트에 추가
+ * 자유 리스트에서 청크를 찾고, 이것을 사용 리스트에 추가
  */
 void *
 GC_malloc(size_t alloc_size)
@@ -206,7 +210,7 @@ scan_heap(void)
     }
 }
 
-int stack_bottom;
+uintptr_t stack_bottom;
 
 /**
  * 스택의 가장 바닥 주소를 찾아내고, 가비지 컬렉션에 필요한 자료구조를 설정한다.
@@ -214,22 +218,23 @@ int stack_bottom;
 void GC_init(void)
 {
     static int initted;
-    FILE *statfp;
 
     if (initted)
         return;
 
     initted = 1;
-    statfp = fopen("/proc/self/stat", "r");
-    assert(statfp != NULL);
-    fscanf(statfp,
-           "%*d %*s %*c %*d %*d %*d %*d %*d %*u "
-           "%*lu %*lu %*lu %*lu %*lu %*lu %*ld %*ld "
-           "%*ld %*ld %*ld %*ld %*llu %*lu %*ld "
-           "%*lu %*lu %*lu %lu",
-           &stack_bottom);
 
-    fclose(statfp);
+    // macOS에서는 pthread API를 사용하여 스택 정보를 얻음
+    pthread_t self = pthread_self();
+    void *stack_addr = pthread_get_stackaddr_np(self);
+    size_t stack_size = pthread_get_stacksize_np(self);
+
+    // stack_bottom은 스택의 가장 낮은 주소
+    // 스택은 높은 주소에서 낮은 주소로 자라므로 시작 주소에서 크기를 빼면 바닥 주소가 됨
+    stack_bottom = (uintptr_t)stack_addr - stack_size;
+
+    printf("Stack information - addr: %p, size: %zu, bottom: %p\n",
+           stack_addr, stack_size, (void *)stack_bottom);
 
     usedp = NULL;
     base.next = freep = &base;
@@ -242,22 +247,50 @@ void GC_init(void)
  */
 void GC_collect(void)
 {
+    printf("function GC_collect(void) called\n");
     header_t *p, *prevp, *tp;
     uintptr_t stack_top;
 
-    extern char end, etext; /* provided by the linker */
+    // macOS에서는 링커가 제공하는 심볼 대신 getsectbyname을 사용
+    unsigned long data_size, bss_size;
+    uintptr_t *data_start, *bss_start;
+
+    // DATA 세그먼트 가져오기
+    const struct section_64 *data_sect = getsectbyname("__DATA", "__data");
+    if (data_sect)
+    {
+        data_start = (uintptr_t *)(data_sect->addr);
+        data_size = data_sect->size;
+    }
+    printf("DATA segments and size: %p, %zu\n", data_start, data_size);
+
+    // BSS 세그먼트 가져오기
+    const struct section_64 *bss_sect = getsectbyname("__DATA", "__bss");
+    if (bss_sect)
+    {
+        bss_start = (uintptr_t *)(bss_sect->addr);
+        bss_size = bss_sect->size;
+    }
+    printf("BSS segments and size: %p, %zu\n", bss_start, bss_size);
 
     if (usedp == NULL)
         return;
 
     /* Scan the BSS and initialized data segments. */
-    scan_region(&etext, &end);
+    if (data_sect)
+    {
+        scan_region(data_start, (uintptr_t *)((char *)data_start + data_size));
+    }
+    if (bss_sect)
+    {
+        scan_region(bss_start, (uintptr_t *)((char *)bss_start + bss_size));
+    }
 
     /* Scan the stack. */
-    // asm volatile("movq %%rbp, %0" : "=r"(stack_top));
-    asm volatile("mov %0, x29" : "=r"(stack_top));
-    // scan_region((uintptr_t *)&stack_top, &stack_bottom);
+    // 올바른 스택 탑 주소 획득
     stack_top = (uintptr_t)__builtin_frame_address(0);
+    // Apple Silicon에서 스택은 높은 주소에서 낮은 주소로 자라기 때문에 인자 순서 조정
+    scan_region((uintptr_t *)stack_top, (uintptr_t *)stack_bottom);
 
     /* Mark from the head. */
     scan_heap();
@@ -291,7 +324,7 @@ void GC_collect(void)
 
 int main()
 {
-    uintptr_t p;
-    printf("%d\n", sizeof(uintptr_t));
+    GC_init();
+    GC_collect();
     return 0;
 }
