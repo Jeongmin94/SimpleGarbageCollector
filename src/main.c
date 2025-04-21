@@ -68,7 +68,8 @@ morecore(size_t num_units)
     if (num_units > MIN_ALLOC_SIZE)
         num_units = MIN_ALLOC_SIZE / sizeof(header_t);
 
-    if ((vp == sbrk(num_units * sizeof(header_t))) == (void *)-1)
+    vp = (void *)sbrk(num_units * sizeof(header_t));
+    if (vp == (void *)-1)
         return NULL;
 
     up = (header_t *)vp;
@@ -161,7 +162,7 @@ scan_region(uintptr_t *sp, uintptr_t *end)
         bp = usedp;
         do
         {
-            if (bp + 1 <= v && v < bp + 1 + bp->size)
+            if ((uintptr_t)(bp + 1) <= v && v < (uintptr_t)(bp + 1 + bp->size))
             {
                 bp->next = (header_t *)(((uintptr_t)bp->next) | 1);
                 break;
@@ -187,7 +188,7 @@ scan_heap(void)
 
         // 태깅된 경우, bp+1(헤더 다음 영역)부터 한 블록씩 태깅된 영역이 있는지 확인
         for (vp = (uintptr_t *)(bp + 1);
-             vp < (bp + bp->size + 1);
+             vp < (uintptr_t *)(bp + bp->size + 1);
              vp++)
         {
             // 현재 데이터 v가 다른 블록 up의 데이터 영역에 있는지 확인하는 부분
@@ -197,7 +198,7 @@ scan_heap(void)
             do
             {
                 if (up != bp &&
-                    up + 1 <= v && v < up + 1 + up->size)
+                    (uintptr_t)(up + 1) <= v && v < (uintptr_t)(up + 1 + up->size))
                 {
                     up->next = ((header_t *)(((uintptr_t)up->next) | 1));
                     break;
@@ -207,7 +208,7 @@ scan_heap(void)
     }
 }
 
-int stack_bottom;
+uintptr_t stack_bottom;
 
 /**
  * 스택의 가장 바닥 주소를 찾아내고, 가비지 컬렉션에 필요한 자료구조를 설정한다.
@@ -251,25 +252,24 @@ void GC_collect(void)
     if (usedp == NULL)
         return;
 
-    /* Scan the BSS and initialized data segments. */
-    scan_region(&etext, &end);
+    /* 01. Scan the BSS and initialized data segments. */
+    scan_region((uintptr_t *)&etext, (uintptr_t *)&end);
 
-    /* Scan the stack. */
+    /* 02. Scan the stack. */
     asm volatile("movq %%rbp, %0" : "=r"(stack_top));
-    // asm volatile("mov %0, x29" : "=r"(stack_top));
+    scan_region(&stack_top, &stack_bottom);
 
-    /* for Apple Silicon */
-    // scan_region((uintptr_t *)&stack_top, &stack_bottom);
-    // stack_top = (uintptr_t)__builtin_frame_address(0);
+    // printf("etext: %p, end: %p\n", (void *)&etext, (void *)&end);
+    // printf("stack_top: %p, stack_bottom: %p\n", (void *)stack_top, (void *)stack_bottom);
 
-    /* Mark from the head. */
+    /* 03. Mark from the head. */
     scan_heap();
 
     /* And now we collect! */
     for (prevp = usedp, p = UNTAG(usedp->next);; prevp = p, p = UNTAG(p->next))
     {
     next_chunk:
-        if (!(unsigned int)p->next & 1)
+        if (!(uintptr_t)p->next & 1)
         {
             // the chunk hasn't been marked. thus, it must be set free
             tp = p;
@@ -297,5 +297,8 @@ int main()
     // uintptr_t p;
     // printf("%d\n", sizeof(uintptr_t));
     printf("Hello World!\n");
+
+    GC_init();
+    GC_collect();
     return 0;
 }

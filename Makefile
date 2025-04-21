@@ -26,6 +26,12 @@ directories:
 	@mkdir -p $(BUILD_DIR)
 	@mkdir -p $(BIN_DIR)
 
+# Clean and rebuild
+rebuild: clean all
+
+# Run after rebuild
+rebuild-run: rebuild run
+
 # Build main executable
 $(TARGET): $(OBJS)
 	$(CC) $(LDFLAGS) -o $@ $^
@@ -63,4 +69,4 @@ memcheck: $(TARGET)
 clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR)
 
-.PHONY: all directories tests run test memcheck clean 
+.PHONY: all directories tests run test memcheck clean rebuild rebuild-run 
