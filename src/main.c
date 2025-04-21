@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <assert.h>
 
@@ -254,10 +255,12 @@ void GC_collect(void)
     scan_region(&etext, &end);
 
     /* Scan the stack. */
-    // asm volatile("movq %%rbp, %0" : "=r"(stack_top));
-    asm volatile("mov %0, x29" : "=r"(stack_top));
+    asm volatile("movq %%rbp, %0" : "=r"(stack_top));
+    // asm volatile("mov %0, x29" : "=r"(stack_top));
+
+    /* for Apple Silicon */
     // scan_region((uintptr_t *)&stack_top, &stack_bottom);
-    stack_top = (uintptr_t)__builtin_frame_address(0);
+    // stack_top = (uintptr_t)__builtin_frame_address(0);
 
     /* Mark from the head. */
     scan_heap();
@@ -291,7 +294,8 @@ void GC_collect(void)
 
 int main()
 {
-    uintptr_t p;
-    printf("%d\n", sizeof(uintptr_t));
+    // uintptr_t p;
+    // printf("%d\n", sizeof(uintptr_t));
+    printf("Hello World!\n");
     return 0;
 }
