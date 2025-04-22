@@ -2,6 +2,8 @@
     "files.associations": {
         "stdint.h": "c",
         "unistd.h": "c",
-        "assert.h": "c"
+        "assert.h": "c",
+        "heap_checker.h": "c",
+        "stdio.h": "c"
     }
 }

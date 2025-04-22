@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g
+CFLAGS = -Wall -Wextra -g -I$(SRC_DIR)
 LDFLAGS =
 SRC_DIR = src
 BUILD_DIR = build
@@ -18,19 +18,16 @@ TEST_SRCS = $(wildcard $(TEST_DIR)/*.c)
 TEST_OBJS = $(patsubst $(TEST_DIR)/%.c, $(BUILD_DIR)/%.o, $(TEST_SRCS))
 TEST_TARGETS = $(patsubst $(TEST_DIR)/%.c, $(BIN_DIR)/test_%, $(TEST_SRCS))
 
-# Default target - 기존 파일을 지우고 새로 빌드
-all: clean directories $(TARGET) tests
+# Heap checker test targets
+HEAP_CHECK_TARGET = $(BIN_DIR)/test_gc_with_checker
+
+# Default target
+all: directories $(TARGET) tests
 
 # Create necessary directories
 directories:
 	@mkdir -p $(BUILD_DIR)
 	@mkdir -p $(BIN_DIR)
-
-# Clean and rebuild
-rebuild: clean all
-
-# Run after rebuild
-rebuild-run: rebuild run
 
 # Build main executable
 $(TARGET): $(OBJS)
@@ -49,9 +46,17 @@ $(BIN_DIR)/test_%: $(BUILD_DIR)/%.o $(filter-out $(BUILD_DIR)/main.o, $(OBJS))
 $(BUILD_DIR)/%.o: $(TEST_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# Heap checker test
+heap_check: directories $(BUILD_DIR)/test_gc_with_checker.o $(filter-out $(BUILD_DIR)/main.o, $(OBJS))
+	$(CC) $(LDFLAGS) -o $(HEAP_CHECK_TARGET) $(BUILD_DIR)/test_gc_with_checker.o $(filter-out $(BUILD_DIR)/main.o, $(OBJS))
+
 # Run main program
 run: $(TARGET)
 	./$(TARGET)
+
+# Run heap checker test
+run_heap_check: heap_check
+	./$(HEAP_CHECK_TARGET)
 
 # Run all tests
 test: tests
@@ -69,4 +74,4 @@ memcheck: $(TARGET)
 clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR)
 
-.PHONY: all directories tests run test memcheck clean rebuild rebuild-run 
+.PHONY: all directories tests run test memcheck clean heap_check run_heap_check 
