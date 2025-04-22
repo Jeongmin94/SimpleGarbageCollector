@@ -18,8 +18,8 @@ TEST_SRCS = $(wildcard $(TEST_DIR)/*.c)
 TEST_OBJS = $(patsubst $(TEST_DIR)/%.c, $(BUILD_DIR)/%.o, $(TEST_SRCS))
 TEST_TARGETS = $(patsubst $(TEST_DIR)/%.c, $(BIN_DIR)/test_%, $(TEST_SRCS))
 
-# Default target
-all: directories $(TARGET) tests
+# Default target - 기존 파일을 지우고 새로 빌드
+all: clean directories $(TARGET) tests
 
 # Create necessary directories
 directories:

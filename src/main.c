@@ -259,32 +259,32 @@ void GC_collect(void)
     asm volatile("movq %%rbp, %0" : "=r"(stack_top));
     scan_region(&stack_top, &stack_bottom);
 
-    // printf("etext: %p, end: %p\n", (void *)&etext, (void *)&end);
-    // printf("stack_top: %p, stack_bottom: %p\n", (void *)stack_top, (void *)stack_bottom);
-
     /* 03. Mark from the head. */
     scan_heap();
 
     /* And now we collect! */
     for (prevp = usedp, p = UNTAG(usedp->next);; prevp = p, p = UNTAG(p->next))
     {
-    next_chunk:
-        if (!(uintptr_t)p->next & 1)
+        while (p != NULL && !((uintptr_t)p->next & 1))
         {
             // the chunk hasn't been marked. thus, it must be set free
             tp = p;
             p = UNTAG(p->next);
             add_to_freelist(tp);
 
-            if (usedp == tp)
+            // 현재 제거하려는 가비지 노드가 사용 중인 블록 리스트의 헤드(usedp) 자체인 상황을 의미
+            if (tp == usedp)
             {
                 usedp = NULL;
                 break;
             }
 
             prevp->next = (header_t *)((uintptr_t)p | ((uintptr_t)prevp->next & 1));
-            goto next_chunk;
         }
+
+        if (usedp == NULL)
+            break;
+
         // 다음 GC를 위해 마크 비트 초기화
         p->next = (header_t *)(((uintptr_t)p->next) & ~1);
         if (p == usedp)
@@ -294,10 +294,6 @@ void GC_collect(void)
 
 int main()
 {
-    // uintptr_t p;
-    // printf("%d\n", sizeof(uintptr_t));
-    printf("Hello World!\n");
-
     GC_init();
     GC_collect();
     return 0;
