@@ -74,7 +74,8 @@ morecore(size_t num_units)
 // header_t는 world-alinged 되어 있으므로, 하위 몇 비트는 항상 0이 된다.
 // 따라서 이 중 가장 하위 비트(least significant bit)를 사용하여
 // 현재 블록이 마크되었는지를 표시할 수 있다.
-#define UNTAG(p) ((header_t *)(((uintptr_t)(p)) & 0xfffffffc))
+// 64비트 안전 마스크 사용 (하위 2비트만 제거)
+#define UNTAG(p) ((header_t *)(((uintptr_t)(p)) & ~((uintptr_t)0x3)))
 
 /*
  * 메모리의 특정 영역을 스캔하여, 사용 리스트(used list)에 있는 항목들을 적절히 마크한다.
@@ -89,20 +90,20 @@ scan_region(uintptr_t *sp, uintptr_t *end)
     for (; sp < end; sp++)
     {
         uintptr_t v = sp;
-        printf("scan address: %p\n", v);
+        // printf("scan address: %p\n", v);
         bp = usedp;
         do
         {
-            if (bp != NULL)
-            {
-                printf("bp: %p\n", bp);
-                printf("bp+1: %p\n", bp + 1);
-                printf("bp->size: %d\n", bp->size);
-            }
+            // if (bp != NULL)
+            // {
+            //     printf("bp: %p\n", bp);
+            //     printf("bp+1: %p\n", bp + 1);
+            //     printf("bp->size: %d\n", bp->size);
+            // }
 
             if ((uintptr_t)(bp + 1) <= v && v < (uintptr_t)(bp + 1 + bp->size))
             {
-                printf("tagging v\n");
+                // printf("tagging v\n");
                 bp->next = (header_t *)(((uintptr_t)bp->next) | 1);
                 break;
             }
@@ -170,6 +171,8 @@ void GC_init(void)
            "%*ld %*ld %*ld %*ld %*llu %*lu %*ld "
            "%*lu %*lu %*lu %lu",
            &stack_bottom);
+
+    printf("GC_init - stack_bottom : %p\n", (void *)stack_bottom);
 
     fclose(statfp);
 
@@ -253,6 +256,38 @@ void GC_collect(void)
     if (usedp == NULL)
         return;
 
+    // 디버깅: usedp 링크드 리스트 검사
+    printf("=== Checking used blocks list integrity ===\n");
+    header_t *debug_p = usedp;
+    int count = 0;
+    const int max_blocks = 100; // 안전 장치
+
+    do
+    {
+        printf("Used block #%d: %p, size: %u, next: %p\n",
+               count, debug_p, debug_p->size, debug_p->next);
+
+        // 비정상적인 주소나 크기 검사
+        if ((uintptr_t)debug_p < 0x1000 || debug_p->size > 1000000)
+        {
+            printf("Warning: Suspicious block detected!\n");
+        }
+
+        // 다음 노드로 이동
+        debug_p = UNTAG(debug_p->next);
+        count++;
+
+        // 무한 루프 방지
+        if (count > max_blocks)
+        {
+            printf("Too many blocks in used list, possible loop detected.\n");
+            break;
+        }
+    } while (debug_p != usedp);
+
+    printf("Total of %d blocks in used list\n", count);
+    printf("===================================\n");
+
     /* 01. Scan the BSS and initialized data segments. */
     printf("01. Scan the BSS and initialized data segments.\n");
     printf("end: %p, etext: %p\n", &end, &etext);
@@ -261,8 +296,8 @@ void GC_collect(void)
     /* 02. Scan the stack. */
     asm volatile("movq %%rbp, %0" : "=r"(stack_top));
     printf("02. Scan the stack.\n");
-    printf("stack_top: %p, stack_bottom: %p\n", stack_top, stack_bottom);
-    scan_region((uintptr_t *)stack_top, (uintptr_t *)stack_bottom);
+    printf("stack_top: %p, stack_bottom: %p\n", (void *)stack_top, (void *)stack_bottom);
+    scan_region(stack_top, stack_bottom);
 
     /* 03. Mark from the head. */
     scan_heap();
